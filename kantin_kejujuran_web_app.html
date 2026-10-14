@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KANTIN+ | Kantin Kejujuran Digital</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-[#f4f7fb] text-[#172033] min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white">
+
+    <!-- App Root Container -->
+    <div id="app" class="flex-1 flex flex-col"></div>
+
+    <!-- Modals Container -->
+    <div id="modal-container"></div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-3 pointer-events-none"></div>
+
+    <script>
+        // --- State & Default Data ---
+        const DEFAULT_PRODUCTS = [
+            { id: 1, name: 'Nasi', category: 'makanan', price: 10000, stock: 40, minStock: 10, restockCost: 380000, restockPeriod: 'Perhari', icon: '🍚', sold: 0 },
+            { id: 2, name: 'Maryam', category: 'makanan', price: 5000, stock: 20, minStock: 5, restockCost: 80000, restockPeriod: 'Perhari', icon: '🫓', sold: 0 },
+            { id: 3, name: 'Air Putih', category: 'minuman', price: 3000, stock: 30, minStock: 10, restockCost: 1440000, restockPeriod: '2 minggu', icon: '💧', sold: 0 },
+            { id: 4, name: 'Donat', category: 'snack', price: 6000, stock: 10, minStock: 5, restockCost: 55000, restockPeriod: 'Perhari', icon: '🍩', sold: 0 },
+            { id: 5, name: 'Jus', category: 'minuman', price: 6000, stock: 30, minStock: 10, restockCost: 165000, restockPeriod: 'Perhari', icon: '🧃', sold: 0 },
+            { id: 6, name: 'Moci', category: 'snack', price: 5000, stock: 20, minStock: 5, restockCost: 80000, restockPeriod: 'Perhari', icon: '🍡', sold: 0 },
+            { id: 7, name: 'Nabati', category: 'snack', price: 2000, stock: 100, minStock: 20, restockCost: 180000, restockPeriod: 'Seminggu', icon: '🍫', sold: 0 },
+            { id: 8, name: 'Mie', category: 'makanan', price: 4000, stock: 16, minStock: 5, restockCost: 56000, restockPeriod: 'Perhari', icon: '🍜', sold: 0 }
+        ];
+
+        let state = {
+            view: 'user', // 'user' or 'manager'
+            managerTab: 'summary', // summary, products, transactions, stock, greedy, history, activity
+            cart: [],
+            searchQuery: '',
+            selectedCategory: 'semua',
+            products: [],
+            transactions: [],
+            activities: [],
+            stockHistory: [],
+            restocks: []
+        };
+
+        // --- Storage & Initialization ---
+        function loadData() {
+            try {
+                const saved = localStorage.getItem('kantin_plus_data');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    state.products = parsed.products || JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+                    state.transactions = parsed.transactions || [];
+                    state.activities = parsed.activities || [];
+                    state.stockHistory = parsed.stockHistory || [];
+                    state.restocks = parsed.restocks || [];
+                } else {
+                    resetToDefault();
+                }
+            } catch (e) {
+                resetToDefault();
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('kantin_plus_data', JSON.stringify({
+                products: state.products,
+                transactions: state.transactions,
+                activities: state.activities,
+                stockHistory: state.stockHistory,
+                restocks: state.restocks
+            }));
+        }
+
+        function resetToDefault() {
+            state.products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+            state.transactions = [];
+            state.activities = [];
+            state.stockHistory = [];
+            state.restocks = [];
+            saveData();
+        }
+
+        function formatRupiah(n) {
+            return 'Rp' + parseInt(n || 0).toLocaleString('id-ID');
+        }
+
+        function getFormattedTime() {
+            const now = new Date();
+            const d = String(now.getDate()).padStart(2, '0');
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const y = now.getFullYear();
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            return `${d}/${m}/${y} ${h}:${min}`;
+        }
+
+        function logActivity(type, text, extra = {}) {
+            const act = {
+                id: Date.now(),
+                time: getFormattedTime(),
+                type: type,
+                text: text,
+                ...extra
+            };
+            state.activities.unshift(act);
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bgClass = type === 'success' ? 'bg-emerald-600' : (type === 'error' ? 'bg-rose-600' : 'bg-blue-600');
+            toast.className = `${bgClass} text-white px-5 py-3 rounded-xl shadow-lg font-medium text-sm transition-all duration-300 transform translate-y-5 opacity-0 flex items-center gap-2 pointer-events-auto`;
+            toast.innerHTML = `<span>${type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️')}</span> ${message}`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.remove('translate-y-5', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-5', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // --- Render Core Router ---
+        function render() {
+            const app = document.getElementById('app');
+            app.innerHTML = '';
+            if (state.view === 'user') {
+                renderUserView(app);
+            } else {
+                renderManagerView(app);
+            }
+        }
+
+        // ==================== USER VIEW ====================
+        function renderUserView(container) {
+            const totalCartItems = state.cart.reduce((sum, item) => sum + item.qty, 0);
+
+            container.innerHTML = `
+                <!-- Navbar -->
+                <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+                        <div class="flex items-center gap-3 cursor-pointer" onclick="state.view='user'; render();">
+                            <span class="text-3xl">🍱</span>
+                            <h1 class="text-2xl font-bold text-[#172033] tracking-tight">KANTIN<span class="text-blue-600">+</span></h1>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="openCartModal()" class="relative bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2.5 rounded-xl font-semibold transition flex items-center gap-2">
+                                🛒 Keranjang
+                                <span id="cart-badge" class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full font-bold">${totalCartItems}</span>
+                            </button>
+                            <button onclick="promptLogin()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold transition flex items-center gap-2">
+                                ⚙️ Pengelola
+                            </button>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Hero Section -->
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4 w-full">
+                    <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-8 sm:p-10 text-white shadow-xl relative overflow-hidden">
+                        <div class="absolute right-0 bottom-0 opacity-10 translate-x-10 translate-y-10 text-9xl">🍱</div>
+                        <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">Selamat Datang di KANTIN+ 👋</h2>
+                        <p class="text-blue-100 max-w-xl text-base sm:text-lg leading-relaxed">Kantin kejujuran digital untuk membeli makanan dan minuman dengan mudah, cepat, dan mandiri.</p>
+                    </div>
+                </div>
+
+                <!-- Main Catalog Area -->
+                <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1 flex flex-col">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                        <h3 class="text-2xl font-bold text-[#172033]">Daftar Menu</h3>
+                        <!-- Search Bar -->
+                        <div class="relative w-full md:w-80">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">🔍</span>
+                            <input type="text" id="search-input" value="${state.searchQuery}" oninput="handleSearch(this.value)" placeholder="Cari makanan atau minuman..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm shadow-sm">
+                        </div>
+                    </div>
+
+                    <!-- Category Pills -->
+                    <div class="flex items-center gap-2 overflow-x-auto pb-4 mb-6 no-scrollbar">
+                        ${renderCategoryButton('semua', 'Semua')}
+                        ${renderCategoryButton('makanan', '🍚 Makanan')}
+                        ${renderCategoryButton('minuman', '🥤 Minuman')}
+                        ${renderCategoryButton('snack', '🍫 Snack')}
+                    </div>
+
+                    <!-- Product Grid -->
+                    <div id="product-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        ${renderProductCards()}
+                    </div>
+                </main>
+
+                <!-- Footer -->
+                <footer class="bg-white border-t border-slate-200 py-6 mt-12 text-center text-sm text-slate-500">
+                    <p>KANTIN+ &copy; 2026 — Kantin Kejujuran Digital Berbasis Web</p>
+                </footer>
+            `;
+        }
+
+        function renderCategoryButton(catKey, label) {
+            const active = state.selectedCategory === catKey;
+            const cls = active 
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' 
+                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200';
+            return `<button onclick="selectCategory('${catKey}')" class="${cls} px-5 py-2.5 rounded-2xl font-semibold text-sm transition whitespace-nowrap">${label}</button>`;
+        }
+
+        function selectCategory(cat) {
+            state.selectedCategory = cat;
+            render();
+        }
+
+        function handleSearch(val) {
+            state.searchQuery = val;
+            const grid = document.getElementById('product-grid');
+            if (grid) {
+                grid.innerHTML = renderProductCards();
+            }
+        }
+
+        function renderProductCards() {
+            const q = state.searchQuery.toLowerCase().trim();
+            const filtered = state.products.filter(p => {
+                const matchQ = p.name.toLowerCase().includes(q);
+                const matchCat = state.selectedCategory === 'semua' || p.category === state.selectedCategory;
+                return matchQ && matchCat;
+            });
+
+            if (filtered.length === 0) {
+                return `
+                    <div class="col-span-full py-16 text-center bg-white rounded-3xl border border-slate-200 shadow-sm">
+                        <div class="text-5xl mb-3">🔍</div>
+                        <p class="text-slate-500 font-medium">Barang tidak ditemukan.</p>
+                    </div>
+                `;
+            }
+
+            return filtered.map(p => {
+                let badgeHTML = '';
+                if (p.stock === 0) {
+                    badgeHTML = `<span class="bg-rose-50 text-rose-600 px-3 py-1 rounded-full text-xs font-bold border border-rose-100">Stok Habis</span>`;
+                } else if (p.stock <= p.minStock) {
+                    badgeHTML = `<span class="bg-amber-50 text-amber-600 px-3 py-1 rounded-full text-xs font-bold border border-amber-100">Stok Menipis (${p.stock})</span>`;
+                } else {
+                    badgeHTML = `<span class="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-xs font-bold border border-emerald-100">Stok: ${p.stock}</span>`;
+                }
+
+                return `
+                    <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
+                        <div>
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-4xl shadow-inner group-hover:scale-105 transition">${p.icon || '🍱'}</div>
+                                ${badgeHTML}
+                            </div>
+                            <h4 class="text-lg font-bold text-[#172033] mb-1">${p.name}</h4>
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">${p.category}</p>
+                        </div>
+                        <div class="pt-4 border-t border-slate-100 flex items-center justify-between mt-4">
+                            <div>
+                                <span class="text-xs text-slate-400 block">Harga</span>
+                                <span class="text-base font-extrabold text-blue-600">${formatRupiah(p.price)}</span>
+                            </div>
+                            ${p.stock > 0 ? `
+                                <button onclick="addToCart(${p.id})" class="bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow-sm">
+                                    ➕ Tambah
+                                </button>
+                            ` : `
+                                <button disabled class="bg-slate-100 text-slate-400 px-4 py-2.5 rounded-xl font-bold text-sm cursor-not-allowed">
+                                    Habis
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function addToCart(pid) {
+            const product = state.products.find(p => p.id === pid);
+            if (!product || product.stock <= 0) {
+                showToast('Stok barang habis.', 'error');
+                return;
+            }
+
+            const cartItem = state.cart.find(item => item.id === pid);
+            if (cartItem) {
+                if (cartItem.qty >= product.stock) {
+                    showToast('Jumlah melebihi stok yang tersedia.', 'error');
+                    return;
+                }
+                cartItem.qty += 1;
+            } else {
+                state.cart.push({ id: pid, qty: 1 });
+            }
+
+            showToast(`${product.name} ditambahkan ke keranjang.`);
+            render();
+        }
+
+        // ==================== CART & CHECKOUT MODALS ====================
+        function openCartModal() {
+            const modalContainer = document.getElementById('modal-container');
+            
+            function updateModalContent() {
+                const total = state.cart.reduce((sum, item) => {
+                    const p = state.products.find(prod => prod.id === item.id);
+                    return sum + (p ? p.price * item.qty : 0);
+                }, 0);
+
+                modalContainer.innerHTML = `
+                    <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                        <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                            <!-- Modal Header -->
+                            <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                                <h3 class="text-xl font-bold text-[#172033]">🛒 Keranjang Belanja</h3>
+                                <button onclick="closeModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                            </div>
+                            <!-- Modal Body -->
+                            <div class="p-6 overflow-y-auto flex-1 space-y-4">
+                                ${state.cart.length === 0 ? `
+                                    <div class="text-center py-12">
+                                        <div class="text-5xl mb-3">🛒</div>
+                                        <p class="text-slate-500 font-medium">Keranjang masih kosong.</p>
+                                    </div>
+                                ` : state.cart.map(item => {
+                                    const p = state.products.find(prod => prod.id === item.id);
+                                    if (!p) return '';
+                                    return `
+                                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                            <div class="flex items-center gap-3">
+                                                <span class="text-2xl">${p.icon}</span>
+                                                <div>
+                                                    <h4 class="font-bold text-[#172033]">${p.name}</h4>
+                                                    <p class="text-xs text-slate-500">${formatRupiah(p.price)} x ${item.qty}</p>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center gap-3">
+                                                <div class="flex items-center bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                                    <button onclick="changeCartQty(${p.id}, -1)" class="px-3 py-1 font-bold text-slate-600 hover:bg-slate-100 transition">−</button>
+                                                    <span class="px-3 py-1 text-sm font-bold text-[#172033]">${item.qty}</span>
+                                                    <button onclick="changeCartQty(${p.id}, 1)" class="px-3 py-1 font-bold text-slate-600 hover:bg-slate-100 transition">+</button>
+                                                </div>
+                                                <span class="font-bold text-blue-600 w-24 text-right">${formatRupiah(p.price * item.qty)}</span>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                            <!-- Modal Footer -->
+                            ${state.cart.length > 0 ? `
+                                <div class="px-6 py-5 border-t border-slate-100 bg-slate-50 flex flex-col gap-4">
+                                    <div class="flex items-center justify-between">
+                                        <span class="font-bold text-slate-600">Total Pembayaran</span>
+                                        <span class="text-2xl font-extrabold text-blue-600">${formatRupiah(total)}</span>
+                                    </div>
+                                    <button onclick="openPaymentModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-blue-600/30">
+                                        Bayar Sekarang
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
+            window.changeCartQty = function(pid, delta) {
+                const item = state.cart.find(i => i.id === pid);
+                const p = state.products.find(prod => prod.id === pid);
+                if (!item || !p) return;
+
+                item.qty += delta;
+                if (item.qty <= 0) {
+                    state.cart = state.cart.filter(i => i.id !== pid);
+                } else if (item.qty > p.stock) {
+                    item.qty = p.stock;
+                    showToast('Jumlah tidak boleh melebihi stok.', 'error');
+                }
+                updateModalContent();
+                render();
+            };
+
+            window.closeModal = function() {
+                modalContainer.innerHTML = '';
+            };
+
+            updateModalContent();
+        }
+
+        function openPaymentModal() {
+            const modalContainer = document.getElementById('modal-container');
+            const total = state.cart.reduce((sum, item) => {
+                const p = state.products.find(prod => prod.id === item.id);
+                return sum + (p ? p.price * item.qty : 0);
+            }, 0);
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-[#172033]">Pilih Metode Pembayaran</h3>
+                            <button onclick="closeModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-center mb-6">
+                                <span class="text-xs text-slate-500 block">Total Tagihan</span>
+                                <span class="text-2xl font-extrabold text-blue-600">${formatRupiah(total)}</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 hover:border-blue-600 cursor-pointer transition bg-white shadow-sm">
+                                <input type="radio" name="payment_method" value="QRIS" checked class="w-5 h-5 text-blue-600 focus:ring-blue-600">
+                                <div class="text-2xl">📱</div>
+                                <div>
+                                    <h4 class="font-bold text-[#172033]">QRIS</h4>
+                                    <p class="text-xs text-slate-500">Scan QR Code via Mobile Banking / E-Wallet</p>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 hover:border-blue-600 cursor-pointer transition bg-white shadow-sm">
+                                <input type="radio" name="payment_method" value="Tunai" class="w-5 h-5 text-blue-600 focus:ring-blue-600">
+                                <div class="text-2xl">💵</div>
+                                <div>
+                                    <h4 class="font-bold text-[#172033]">Tunai (Cash)</h4>
+                                    <p class="text-xs text-slate-500">Bayar langsung dengan uang tunai</p>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="px-6 py-5 border-t border-slate-100 bg-slate-50">
+                            <button onclick="proceedPayment(${total})" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-blue-600/30">
+                                Lanjutkan Pembayaran
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function proceedPayment(total) {
+            const selected = document.querySelector('input[name="payment_method"]:checked');
+            if (!selected) return;
+            const method = selected.value;
+
+            if (method === 'QRIS') {
+                openQrisModal(total);
+            } else {
+                openCashModal(total);
+            }
+        }
+
+        function openQrisModal(total) {
+            const modalContainer = document.getElementById('modal-container');
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col text-center">
+                        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-[#172033]">📱 Pembayaran QRIS</h3>
+                            <button onclick="closeModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                        </div>
+                        <div class="p-6 space-y-4 flex flex-col items-center">
+                            <p class="text-sm text-slate-500">Scan QR Code di bawah menggunakan aplikasi pembayaran Anda:</p>
+                            <span class="text-xl font-extrabold text-blue-600">${formatRupiah(total)}</span>
+                            
+                            <!-- Simulated QR Canvas -->
+                            <div class="p-4 bg-white border-2 border-slate-200 rounded-3xl shadow-sm my-2">
+                                <div class="w-48 h-48 bg-slate-900 rounded-2xl grid grid-cols-6 gap-2 p-3">
+                                    ${Array.from({length: 36}).map((_, i) => `<div class="${(i % 2 === 0 || i % 5 === 0) ? 'bg-white' : 'bg-slate-900'} rounded-md"></div>`).join('')}
+                                </div>
+                            </div>
+                            <p class="text-xs text-slate-400">KANTIN+ Digital Payment Gateway</p>
+                        </div>
+                        <div class="px-6 py-5 border-t border-slate-100 bg-slate-50">
+                            <button onclick="finishTransaction('QRIS', 0)" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-emerald-600/30">
+                                Konfirmasi Pembayaran Selesai
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function openCashModal(total) {
+            const modalContainer = document.getElementById('modal-container');
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-[#172033]">💵 Pembayaran Tunai</h3>
+                            <button onclick="closeModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-center">
+                                <span class="text-xs text-slate-500 block">Total Tagihan</span>
+                                <span class="text-2xl font-extrabold text-blue-600">${formatRupiah(total)}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-2">Jumlah Uang Tunai Diterima</label>
+                                <input type="number" id="cash-input" placeholder="Contoh: 50000" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-lg">
+                            </div>
+                        </div>
+                        <div class="px-6 py-5 border-t border-slate-100 bg-slate-50">
+                            <button onclick="processCashFinish(${total})" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-blue-600/30">
+                                Bayar & Selesaikan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function processCashFinish(total) {
+            const inputVal = document.getElementById('cash-input').value;
+            const paid = parseInt(inputVal);
+            if (isNaN(paid)) {
+                showToast('Jumlah uang harus berupa angka.', 'error');
+                return;
+            }
+            if (paid < total) {
+                showToast('Uang yang dibayarkan kurang dari total tagihan.', 'error');
+                return;
+            }
+            const change = paid - total;
+            finishTransaction('Tunai', change);
+        }
+
+        function finishTransaction(method, change) {
+            // Verify stock
+            for (let item of state.cart) {
+                const p = state.products.find(prod => prod.id === item.id);
+                if (!p || p.stock < item.qty) {
+                    showToast('Stok barang tidak mencukupi.', 'error');
+                    return;
+                }
+            }
+
+            const receiptItems = [];
+            for (let item of state.cart) {
+                const p = state.products.find(prod => prod.id === item.id);
+                const before = p.stock;
+                p.stock -= item.qty;
+                p.sold = (p.sold || 0) + item.qty;
+                const after = p.stock;
+                const subtotal = p.price * item.qty;
+
+                receiptItems.push({
+                    name: p.name,
+                    qty: item.qty,
+                    subtotal: subtotal
+                });
+
+                state.stockHistory.unshift({
+                    time: getFormattedTime(),
+                    product: p.name,
+                    type: 'Penjualan',
+                    change: -item.qty,
+                    before: before,
+                    after: after
+                });
+            }
+
+            const total = receiptItems.reduce((s, i) => s + i.subtotal, 0);
+            const transactionRecord = {
+                id: Date.now(),
+                time: getFormattedTime(),
+                items: receiptItems,
+                total: total,
+                payment: method
+            };
+            state.transactions.unshift(transactionRecord);
+
+            const itemNames = receiptItems.map(i => `${i.name} x${i.qty}`).join(', ');
+            logActivity('penjualan', `Transaksi ${method}: ${itemNames}. Total ${formatRupiah(total)}.`);
+
+            saveData();
+            state.cart = [];
+            
+            // Show receipt modal
+            openReceiptModal(receiptItems, total, method, change);
+        }
+
+        function openReceiptModal(items, total, method, change) {
+            const modalContainer = document.getElementById('modal-container');
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col text-center">
+                        <div class="p-6 border-b border-slate-100 flex items-center justify-between">
+                            <span class="text-2xl font-black text-[#172033]">KANTIN<span class="text-blue-600">+</span></span>
+                            <button onclick="closeModal(); render();" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                        </div>
+                        <div class="p-6 space-y-4 text-left">
+                            <div class="text-center pb-4 border-b border-slate-100">
+                                <h4 class="font-bold text-lg text-[#172033]">STRUK PEMBAYARAN</h4>
+                                <p class="text-xs text-slate-400">${getFormattedTime()}</p>
+                            </div>
+                            <div class="space-y-2 max-h-48 overflow-y-auto">
+                                ${items.map(i => `
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-slate-700 font-medium">${i.name} x${i.qty}</span>
+                                        <span class="font-bold text-[#172033]">${formatRupiah(i.subtotal)}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div class="pt-4 border-t border-slate-100 space-y-1.5">
+                                <div class="flex justify-between font-bold text-base">
+                                    <span class="text-slate-800">Total</span>
+                                    <span class="text-blue-600">${formatRupiah(total)}</span>
+                                </div>
+                                <div class="flex justify-between text-xs text-slate-500">
+                                    <span>Metode Pembayaran</span>
+                                    <span class="font-bold">${method}</span>
+                                </div>
+                                ${method === 'Tunai' ? `
+                                    <div class="flex justify-between text-xs text-slate-500">
+                                        <span>Kembalian</span>
+                                        <span class="font-bold text-emerald-600">${formatRupiah(change)}</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <div class="px-6 py-5 border-t border-slate-100 bg-slate-50">
+                            <button onclick="closeModal(); render();" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-blue-600/30">
+                                Selesai
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== MANAGER LOGIN & DASHBOARD ====================
+        function promptLogin() {
+            const modalContainer = document.getElementById('modal-container');
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-[#172033]">⚙️ Login Pengelola</h3>
+                            <button onclick="closeModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Username</label>
+                                <input type="text" id="admin-user" placeholder="admin" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Password</label>
+                                <input type="password" id="admin-pass" placeholder="1234" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm">
+                            </div>
+                        </div>
+                        <div class="px-6 py-5 border-t border-slate-100 bg-slate-50">
+                            <button onclick="handleLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-blue-600/30">
+                                Masuk Dashboard
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleLogin() {
+            const u = document.getElementById('admin-user').value;
+            const pw = document.getElementById('admin-pass').value;
+            if (u === 'admin' && pw === '1234') {
+                closeModal();
+                logActivity('sistem', 'Pengelola berhasil login ke dashboard.');
+                saveData();
+                state.view = 'manager';
+                state.managerTab = 'summary';
+                render();
+                showToast('Login berhasil!');
+            } else {
+                showToast('Username atau password salah.', 'error');
+            }
+        }
+
+        function renderManagerView(container) {
+            const totalStock = state.products.reduce((s, p) => s + p.stock, 0);
+            const totalSales = state.transactions.reduce((s, t) => s + t.total, 0);
+            const totalCost = state.restocks.reduce((s, r) => s + r.cost, 0);
+
+            container.innerHTML = `
+                <!-- Manager Header -->
+                <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+                        <div class="flex items-center gap-3 cursor-pointer" onclick="state.view='user'; render();">
+                            <span class="text-3xl">🍱</span>
+                            <h1 class="text-2xl font-bold text-[#172033] tracking-tight">KANTIN<span class="text-blue-600">+</span> <span class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-lg ml-2">Admin</span></h1>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="state.view='user'; render();" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold transition flex items-center gap-2">
+                                👨‍🎓 Mode Siswa
+                            </button>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Manager Hero -->
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4 w-full">
+                    <div class="bg-gradient-to-r from-slate-900 to-blue-900 rounded-3xl p-8 sm:p-10 text-white shadow-xl relative overflow-hidden">
+                        <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">Dashboard Pengelola ⚙️</h2>
+                        <p class="text-slate-300 max-w-xl text-base sm:text-lg leading-relaxed">Kelola stok, data produk, transaksi, laporan keuangan, dan rekomendasi restock KANTIN+.</p>
+                    </div>
+                </div>
+
+                <!-- Tabs Navigation -->
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full mt-4">
+                    <div class="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 no-scrollbar">
+                        ${renderManagerTabBtn('summary', '📊 Ringkasan')}
+                        ${renderManagerTabBtn('products', '📦 Data Barang')}
+                        ${renderManagerTabBtn('transactions', '💸 Transaksi')}
+                        ${renderManagerTabBtn('stock', '⚠️ Kondisi Stok')}
+                        ${renderManagerTabBtn('greedy', '🧠 Rekomendasi Greedy')}
+                        ${renderManagerTabBtn('history', '📜 Riwayat Stok')}
+                        ${renderManagerTabBtn('activity', '📋 Aktivitas')}
+                    </div>
+                </div>
+
+                <!-- Tab Content Container -->
+                <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1">
+                    ${renderManagerTabContent()}
+                </main>
+
+                <!-- Footer -->
+                <footer class="bg-white border-t border-slate-200 py-6 mt-12 text-center text-sm text-slate-500">
+                    <p>KANTIN+ Pengelola Panel &copy; 2026</p>
+                </footer>
+            `;
+        }
+
+        function renderManagerTabBtn(tabKey, label) {
+            const active = state.managerTab === tabKey;
+            const cls = active 
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-bold' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 font-semibold border border-slate-200';
+            return `<button onclick="switchManagerTab('${tabKey}')" class="${cls} px-5 py-2.5 rounded-2xl text-sm transition whitespace-nowrap">${label}</button>`;
+        }
+
+        function switchManagerTab(tab) {
+            state.managerTab = tab;
+            render();
+        }
+
+        function renderManagerTabContent() {
+            switch (state.managerTab) {
+                case 'summary': return renderSummaryTab();
+                case 'products': return renderProductsTab();
+                case 'transactions': return renderTransactionsTab();
+                case 'stock': return renderStockTab();
+                case 'greedy': return renderGreedyTab();
+                case 'history': return renderHistoryTab();
+                case 'activity': return renderActivityTab();
+                default: return '';
+            }
+        }
+
+        // --- Manager Tabs Implementation ---
+        function renderSummaryTab() {
+            const totalStock = state.products.reduce((s, p) => s + p.stock, 0);
+            const totalSales = state.transactions.reduce((s, t) => s + t.total, 0);
+            const totalCost = state.restocks.reduce((s, r) => s + r.cost, 0);
+            const outStock = state.products.filter(p => p.stock === 0);
+            const lowStock = state.products.filter(p => p.stock > 0 && p.stock <= p.minStock);
+
+            return `
+                <div class="space-y-6">
+                    <!-- Cards Grid -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span class="text-xs font-bold text-slate-400 block mb-1">Total Barang</span>
+                            <span class="text-3xl font-extrabold text-[#172033]">${state.products.length}</span>
+                        </div>
+                        <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span class="text-xs font-bold text-slate-400 block mb-1">Total Stok</span>
+                            <span class="text-3xl font-extrabold text-[#172033]">${totalStock}</span>
+                        </div>
+                        <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span class="text-xs font-bold text-slate-400 block mb-1">Total Penjualan</span>
+                            <span class="text-3xl font-extrabold text-blue-600">${formatRupiah(totalSales)}</span>
+                        </div>
+                        <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span class="text-xs font-bold text-slate-400 block mb-1">Total Restock</span>
+                            <span class="text-3xl font-extrabold text-rose-600">${formatRupiah(totalCost)}</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex flex-wrap gap-3">
+                        <button onclick="openProductFormModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-2xl font-bold text-sm transition shadow-sm flex items-center gap-2">➕ Tambah Barang</button>
+                        <button onclick="openRestockModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-2xl font-bold text-sm transition shadow-sm flex items-center gap-2">📦 Restock</button>
+                        <button onclick="resetToDefault(); render(); showToast('Data di-reset ke awal.');" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-5 py-3 rounded-2xl font-bold text-sm transition">🔄 Reset Data</button>
+                    </div>
+
+                    <!-- Stock Status Alert Box -->
+                    <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <h3 class="text-lg font-bold text-[#172033] mb-4">🔔 Status Stok</h3>
+                        <div class="space-y-3">
+                            ${outStock.length === 0 && lowStock.length === 0 ? `
+                                <div class="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-700 font-medium text-sm flex items-center gap-2">
+                                    <span>✅</span> Semua stok masih dalam kondisi aman.
+                                </div>
+                            ` : ''}
+                            ${outStock.map(p => `
+                                <div class="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-700 font-medium text-sm flex items-center gap-2">
+                                    <span>❌</span> <strong>${p.name}</strong> — stok habis!
+                                </div>
+                            `).join('')}
+                            ${lowStock.map(p => `
+                                <div class="p-4 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700 font-medium text-sm flex items-center gap-2">
+                                    <span>⚠️</span> <strong>${p.name}</strong> — stok menipis (${p.stock} tersisa).
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Financial Report -->
+                    <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <h3 class="text-lg font-bold text-[#172033] mb-4">💰 Laporan Keuangan & Restock</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <span class="text-xs text-slate-400 block mb-1">Penjualan</span>
+                                <span class="text-lg font-bold text-emerald-600">${formatRupiah(totalSales)}</span>
+                            </div>
+                            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <span class="text-xs text-slate-400 block mb-1">Biaya Restock</span>
+                                <span class="text-lg font-bold text-rose-600">${formatRupiah(totalCost)}</span>
+                            </div>
+                            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <span class="text-xs text-slate-400 block mb-1">Selisih (Profit)</span>
+                                <span class="text-lg font-bold text-blue-600">${formatRupiah(totalSales - totalCost)}</span>
+                            </div>
+                            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <span class="text-xs text-slate-400 block mb-1">Jumlah Restock</span>
+                                <span class="text-lg font-bold text-slate-700">${state.restocks.length} Kali</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderProductsTab() {
+            return `
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 flex items-center justify-between">
+                        <h3 class="text-lg font-bold text-[#172033]">📦 Data Barang</h3>
+                        <button onclick="openProductFormModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow-sm">➕ Tambah Barang</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200 text-slate-400 text-xs uppercase tracking-wider">
+                                    <th class="p-4 font-bold">ID</th>
+                                    <th class="p-4 font-bold">Barang</th>
+                                    <th class="p-4 font-bold">Kategori</th>
+                                    <th class="p-4 font-bold">Harga</th>
+                                    <th class="p-4 font-bold">Stok</th>
+                                    <th class="p-4 font-bold">Min. Stok</th>
+                                    <th class="p-4 font-bold">Biaya Restock</th>
+                                    <th class="p-4 font-bold">Periode</th>
+                                    <th class="p-4 font-bold text-right">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
+                                ${state.products.map(p => `
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="p-4 font-bold text-slate-400">#${p.id}</td>
+                                        <td class="p-4 font-bold text-[#172033] flex items-center gap-2"><span class="text-xl">${p.icon || '🍱'}</span> ${p.name}</td>
+                                        <td class="p-4 capitalize">${p.category}</td>
+                                        <td class="p-4 font-bold text-blue-600">${formatRupiah(p.price)}</td>
+                                        <td class="p-4 font-bold">${p.stock}</td>
+                                        <td class="p-4">${p.minStock}</td>
+                                        <td class="p-4">${formatRupiah(p.restockCost)}</td>
+                                        <td class="p-4">${p.restockPeriod}</td>
+                                        <td class="p-4 text-right space-x-2">
+                                            <button onclick="openProductFormModal(${p.id})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl font-bold text-xs transition">✏️ Edit</button>
+                                            <button onclick="deleteProduct(${p.id})" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-xl font-bold text-xs transition">🗑️ Hapus</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTransactionsTab() {
+            return `
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-slate-100">
+                        <h3 class="text-lg font-bold text-[#172033]">💸 Riwayat Transaksi</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200 text-slate-400 text-xs uppercase tracking-wider">
+                                    <th class="p-4 font-bold">Waktu</th>
+                                    <th class="p-4 font-bold">Barang Dibeli</th>
+                                    <th class="p-4 font-bold">Total</th>
+                                    <th class="p-4 font-bold">Pembayaran</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
+                                ${state.transactions.length === 0 ? `
+                                    <tr><td colspan="4" class="p-8 text-center text-slate-400 font-medium">Belum ada transaksi tercatat.</td></tr>
+                                ` : state.transactions.map(t => `
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="p-4 text-slate-500">${t.time}</td>
+                                        <td class="p-4 font-medium">${t.items.map(i => `${i.name} x${i.qty}`).join(', ')}</td>
+                                        <td class="p-4 font-bold text-blue-600">${formatRupiah(t.total)}</td>
+                                        <td class="p-4"><span class="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold">${t.payment}</span></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderStockTab() {
+            return `
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+                    <h3 class="text-lg font-bold text-[#172033] mb-2">⚠️ Kondisi Stok Terkini</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        ${state.products.map(p => {
+                            let bg = 'bg-emerald-50 border-emerald-100 text-emerald-700';
+                            let statusText = 'Aman';
+                            if (p.stock === 0) {
+                                bg = 'bg-rose-50 border-rose-100 text-rose-700';
+                                statusText = 'Habis';
+                            } else if (p.stock <= p.minStock) {
+                                bg = 'bg-amber-50 border-amber-100 text-amber-700';
+                                statusText = 'Menipis';
+                            }
+                            return `
+                                <div class="p-4 rounded-2xl border ${bg} flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-3xl">${p.icon}</span>
+                                        <div>
+                                            <h4 class="font-bold text-base text-[#172033]">${p.name}</h4>
+                                            <p class="text-xs opacity-80">Stok: ${p.stock} | Minimum: ${p.minStock}</p>
+                                        </div>
+                                    </div>
+                                    <span class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-white shadow-sm">${statusText}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderGreedyTab() {
+            // Greedy Algorithm Recommendation based on Stock / MinStock ratio
+            const ranked = [...state.products].sort((a, b) => {
+                const ratioA = a.minStock > 0 ? a.stock / a.minStock : 999;
+                const ratioB = b.minStock > 0 ? b.stock / b.minStock : 999;
+                return ratioA - ratioB;
+            });
+
+            return `
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+                    <h3 class="text-lg font-bold text-[#172033]">🧠 Rekomendasi Restock Prioritas (Algoritma Greedy)</h3>
+                    <p class="text-sm text-slate-500">Barang diurutkan berdasarkan rasio stok terhadap stok minimum terendah (prioritas utama untuk segera direstock).</p>
+                    <div class="space-y-3 mt-4">
+                        ${ranked.map((p, index) => {
+                            const ratio = p.minStock > 0 ? (p.stock / p.minStock).toFixed(2) : '-';
+                            return `
+                                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                    <div class="flex items-center gap-4">
+                                        <span class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-sm">#${index + 1}</span>
+                                        <span class="text-2xl">${p.icon}</span>
+                                        <div>
+                                            <h4 class="font-bold text-[#172033]">${p.name}</h4>
+                                            <p class="text-xs text-slate-500">Stok: ${p.stock} | Min Stok: ${p.minStock} | Rasio: ${ratio}</p>
+                                        </div>
+                                    </div>
+                                    <button onclick="openRestockModal(${p.id})" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm">
+                                        Restock Sekarang
+                                    </button>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHistoryTab() {
+            return `
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-slate-100">
+                        <h3 class="text-lg font-bold text-[#172033]">📜 Riwayat Perubahan Stok</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200 text-slate-400 text-xs uppercase tracking-wider">
+                                    <th class="p-4 font-bold">Waktu</th>
+                                    <th class="p-4 font-bold">Barang</th>
+                                    <th class="p-4 font-bold">Jenis</th>
+                                    <th class="p-4 font-bold">Perubahan</th>
+                                    <th class="p-4 font-bold">Sebelum</th>
+                                    <th class="p-4 font-bold">Sesudah</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
+                                ${state.stockHistory.length === 0 ? `
+                                    <tr><td colspan="6" class="p-8 text-center text-slate-400 font-medium">Belum ada riwayat stok.</td></tr>
+                                ` : state.stockHistory.map(h => `
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="p-4 text-slate-500">${h.time}</td>
+                                        <td class="p-4 font-bold text-[#172033]">${h.product}</td>
+                                        <td class="p-4"><span class="px-2.5 py-1 rounded-lg text-xs font-bold ${h.type === 'Restock' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}">${h.type}</span></td>
+                                        <td class="p-4 font-bold ${h.change > 0 ? 'text-emerald-600' : 'text-rose-600'}">${h.change > 0 ? '+' + h.change : h.change}</td>
+                                        <td class="p-4">${h.before}</td>
+                                        <td class="p-4 font-bold">${h.after}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderActivityTab() {
+            return `
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+                    <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                        <h3 class="text-lg font-bold text-[#172033]">📋 Catatan Aktivitas Sistem</h3>
+                        <button onclick="clearActivities()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-4 py-2 rounded-xl text-xs font-bold transition">🗑️ Hapus Catatan</button>
+                    </div>
+                    <div class="space-y-3">
+                        ${state.activities.length === 0 ? `
+                            <p class="text-center text-slate-400 py-8 font-medium">Belum ada aktivitas.</p>
+                        ` : state.activities.map(a => `
+                            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span class="text-sm font-medium text-slate-800">${a.text}</span>
+                                <span class="text-xs text-slate-400">${a.time}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function clearActivities() {
+            if (confirm('Hapus semua catatan aktivitas?')) {
+                state.activities = [];
+                saveData();
+                render();
+                showToast('Catatan aktivitas dibersihkan.');
+            }
+        }
+
+        // --- Manager Modals (Product Form & Restock Form) ---
+        function openProductFormModal(pid = null) {
+            const p = pid ? state.products.find(prod => prod.id === pid) : null;
+            const modalContainer = document.getElementById('modal-container');
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-[#172033]">${p ? '✏️ Edit Barang' : '➕ Tambah Barang Baru'}</h3>
+                            <button onclick="closeModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                        </div>
+                        <div class="p-6 overflow-y-auto flex-1 space-y-4">
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Nama Barang</label>
+                                <input type="text" id="form-name" value="${p ? p.name : ''}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">Kategori</label>
+                                    <select id="form-cat" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                                        <option value="makanan" ${p && p.category === 'makanan' ? 'selected' : ''}>Makanan</option>
+                                        <option value="minuman" ${p && p.category === 'minuman' ? 'selected' : ''}>Minuman</option>
+                                        <option value="snack" ${p && p.category === 'snack' ? 'selected' : ''}>Snack</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">Emoji / Ikon</label>
+                                    <input type="text" id="form-icon" value="${p ? (p.icon || '🍱') : '🍱'}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">Harga (Rp)</label>
+                                    <input type="number" id="form-price" value="${p ? p.price : ''}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">Stok Awal</label>
+                                    <input type="number" id="form-stock" value="${p ? p.stock : 10}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">Stok Minimum</label>
+                                    <input type="number" id="form-min" value="${p ? p.minStock : 5}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">Biaya Restock (Rp)</label>
+                                    <input type="number" id="form-cost" value="${p ? p.restockCost : 50000}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Periode Restock</label>
+                                <input type="text" id="form-period" value="${p ? p.restockPeriod : 'Perhari'}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                            </div>
+                        </div>
+                        <div class="px-6 py-5 border-t border-slate-100 bg-slate-50">
+                            <button onclick="saveProductForm(${pid})" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-blue-600/30">
+                                Simpan Barang
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function saveProductForm(pid) {
+            const name = document.getElementById('form-name').value.trim();
+            const category = document.getElementById('form-cat').value;
+            const icon = document.getElementById('form-icon').value.trim() || '🍱';
+            const price = parseInt(document.getElementById('form-price').value);
+            const stock = parseInt(document.getElementById('form-stock').value);
+            const minStock = parseInt(document.getElementById('form-min').value);
+            const restockCost = parseInt(document.getElementById('form-cost').value);
+            const restockPeriod = document.getElementById('form-period').value.trim();
+
+            if (!name || isNaN(price) || isNaN(stock) || isNaN(minStock) || isNaN(restockCost)) {
+                showToast('Mohon isi semua field dengan valid.', 'error');
+                return;
+            }
+
+            if (pid) {
+                const p = state.products.find(prod => prod.id === pid);
+                if (p) {
+                    p.name = name;
+                    p.category = category;
+                    p.icon = icon;
+                    p.price = price;
+                    p.stock = stock;
+                    p.minStock = minStock;
+                    p.restockCost = restockCost;
+                    p.restockPeriod = restockPeriod;
+                    logActivity('produk', `Data barang ${name} berhasil diperbarui.`);
+                }
+            } else {
+                const newId = Math.max(...state.products.map(p => p.id), 0) + 1;
+                state.products.push({
+                    id: newId,
+                    name, category, icon, price, stock, minStock, restockCost, restockPeriod, sold: 0
+                });
+                logActivity('produk', `Barang baru ${name} berhasil ditambahkan.`);
+            }
+
+            saveData();
+            closeModal();
+            render();
+            showToast('Barang berhasil disimpan.');
+        }
+
+        function deleteProduct(pid) {
+            const p = state.products.find(prod => prod.id === pid);
+            if (p && confirm(`Hapus barang "${p.name}" dari daftar?`)) {
+                state.products = state.products.filter(prod => prod.id !== pid);
+                logActivity('produk', `Barang ${p.name} dihapus dari daftar.`);
+                saveData();
+                render();
+                showToast('Barang berhasil dihapus.');
+            }
+        }
+
+        function openRestockModal(preselectedId = null) {
+            if (state.products.length === 0) {
+                showToast('Belum ada produk untuk direstock.', 'error');
+                return;
+            }
+
+            const modalContainer = document.getElementById('modal-container');
+            const targetProd = preselectedId ? state.products.find(p => p.id === preselectedId) : state.products[0];
+
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <h3 class="text-xl font-bold text-[#172033]">📦 Form Restock Barang</h3>
+                            <button onclick="closeModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition">✕</button>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Pilih Barang</label>
+                                <select id="restock-prod-id" onchange="updateRestockInfo(this.value)" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                                    ${state.products.map(p => `<option value="${p.id}" ${p.id === targetProd.id ? 'selected' : ''}>${p.icon} ${p.name} (Stok: ${p.stock})</option>`).join('')}
+                                </select>
+                            </div>
+                            <div id="restock-info-box" class="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-sm text-slate-700">
+                                Stok saat ini: <strong>${targetProd.stock}</strong><br>
+                                Biaya restock default: <strong>${formatRupiah(targetProd.restockCost)}</strong>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Jumlah Tambahan Stok</label>
+                                <input type="number" id="restock-amount" value="10" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Biaya Aktual (Opsional / Kosongkan untuk default)</label>
+                                <input type="number" id="restock-actual-cost" placeholder="${targetProd.restockCost}" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium">
+                            </div>
+                        </div>
+                        <div class="px-6 py-5 border-t border-slate-100 bg-slate-50">
+                            <button onclick="submitRestock()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-emerald-600/30">
+                                Konfirmasi Restock
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.updateRestockInfo = function(pid) {
+            const p = state.products.find(prod => prod.id === parseInt(pid));
+            const box = document.getElementById('restock-info-box');
+            if (p && box) {
+                box.innerHTML = `Stok saat ini: <strong>${p.stock}</strong><br>Biaya restock default: <strong>${formatRupiah(p.restockCost)}</strong>`;
+            }
+        };
+
+        function submitRestock() {
+            const pid = parseInt(document.getElementById('restock-prod-id').value);
+            const amount = parseInt(document.getElementById('restock-amount').value);
+            const actualCostInput = document.getElementById('restock-actual-cost').value.trim();
+
+            const p = state.products.find(prod => prod.id === pid);
+            if (!p || isNaN(amount) || amount <= 0) {
+                showToast('Jumlah restock tidak valid.', 'error');
+                return;
+            }
+
+            const cost = actualCostInput === '' ? p.restockCost : parseInt(actualCostInput);
+            if (isNaN(cost) || cost < 0) {
+                showToast('Biaya restock tidak valid.', 'error');
+                return;
+            }
+
+            const before = p.stock;
+            p.stock += amount;
+            const after = p.stock;
+
+            state.restocks.unshift({
+                id: Date.now(),
+                time: getFormattedTime(),
+                productId: p.id,
+                product: p.name,
+                amount: amount,
+                cost: cost
+            });
+
+            state.stockHistory.unshift({
+                time: getFormattedTime(),
+                product: p.name,
+                type: 'Restock',
+                change: amount,
+                before: before,
+                after: after
+            });
+
+            logActivity('restock', `Restock ${p.name} sebanyak ${amount} unit.`, { cost });
+            saveData();
+            closeModal();
+            render();
+            showToast(`Restock ${p.name} berhasil!`);
+        }
+
+        // --- Run on Load ---
+        window.onload = function() {
+            loadData();
+            render();
+        };
+    </script>
+</body>
+</html>
